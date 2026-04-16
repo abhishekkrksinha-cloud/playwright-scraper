@@ -33,9 +33,16 @@ export async function extractSignals(page) {
     };
 
     const isSticky = (el) => {
-      const style = window.getComputedStyle(el);
-      return style.position === "fixed" || style.position === "sticky";
-    };
+  const style = window.getComputedStyle(el);
+
+  const rect = el.getBoundingClientRect();
+
+  return (
+    style.position === "fixed" ||
+    style.position === "sticky" ||
+    rect.bottom <= window.innerHeight && rect.top >= 0
+  );
+};
 
     const getJsonLD = () => {
       const scripts = Array.from(document.querySelectorAll('script[type="application/ld+json"]'));
