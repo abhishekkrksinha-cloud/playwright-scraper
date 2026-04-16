@@ -1,5 +1,6 @@
 export async function extractSignals(page) {
   return await page.evaluate(() => {
+
     // ---------- HELPERS ----------
     const text = (el) => el?.innerText?.trim() || null;
 
@@ -37,10 +38,9 @@ export async function extractSignals(page) {
       text(document.querySelector("h1")) ||
       document.title;
 
-    // ---------- PRICE (MULTI-STRATEGY) ----------
+    // ---------- PRICE ----------
     let price = null;
 
-    // Shopify specific
     const shopifyPrice =
       document.querySelector('[data-product-price]') ||
       document.querySelector('.price-item--regular') ||
@@ -51,7 +51,6 @@ export async function extractSignals(page) {
       price = text(shopifyPrice);
     }
 
-    // JSON-LD fallback
     if (!price) {
       const jsonLD = getJsonLD();
       for (let data of jsonLD) {
@@ -62,13 +61,12 @@ export async function extractSignals(page) {
       }
     }
 
-    // Regex fallback
     if (!price) {
       const match = document.body.innerText.match(/₹\s?\d+[,\d]*/);
       if (match) price = match[0];
     }
 
-    // ---------- CTA DETECTION ----------
+    // ---------- CTA ----------
     const ctas = getAll("button, a")
       .map((el) => ({
         text: text(el),
@@ -97,18 +95,17 @@ export async function extractSignals(page) {
 
     const bodyText = document.body.innerText;
 
-    const ratingMatch = bodyText.match(/(\d\.\d)\s?(out of 5|stars?)/i);
+    const ratingMatch = bodyText.match(/(\d\.\d)/);
     if (ratingMatch) rating = ratingMatch[1];
 
     const reviewMatch = bodyText.match(/(\d+)\s?(reviews|ratings)/i);
     if (reviewMatch) reviewCount = reviewMatch[1];
 
-    // ---------- OFFERS ENGINE ----------
+    // ---------- OFFERS ----------
     const offerPatterns = [
       /buy\s?\d+.*?get\s?\d+.*?(off|free)/gi,
       /\d+%\s?(off|discount)/gi,
-      /free\s?(shipping|delivery)/gi,
-      /sale\s?ends?.*/gi
+      /free\s?(shipping|delivery)/gi
     ];
 
     let offers = [];
@@ -123,42 +120,26 @@ export async function extractSignals(page) {
       .map((img) => img.src)
       .filter(Boolean);
 
-    // ---------- FINAL ----------
+    // ---------- RETURN (IMPORTANT: INSIDE FUNCTION) ----------
     return {
       platform: isShopify ? "shopify" : "unknown",
-
       title,
       price,
-
       primaryCTA,
       stickyCTA,
       allCTAs: ctas,
-
       rating,
       reviewCount,
-
       offers,
+      imageCount: images.length,
 
-      imageCount: images.length
+      confidenceFlags: {
+        hasPrice: !!price,
+        hasCTA: !!primaryCTA,
+        hasStickyCTA: !!stickyCTA,
+        hasReviews: !!reviewCount
+      }
     };
+
   });
 }
-return {
-  platform: isShopify ? "shopify" : "unknown",
-  title,
-  price,
-  primaryCTA,
-  stickyCTA,
-  allCTAs: ctas,
-  rating,
-  reviewCount,
-  offers,
-  imageCount: images.length,
-
-  confidenceFlags: {
-    hasPrice: !!price,
-    hasCTA: !!primaryCTA,
-    hasStickyCTA: !!stickyCTA,
-    hasReviews: !!reviewCount
-  }
-};
