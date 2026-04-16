@@ -14,7 +14,7 @@ app.get("/", (req, res) => {
   res.json({ status: "Scraper running 🚀" });
 });
 
-// Main scrape endpoint
+// Scrape endpoint with timeout protection
 app.post("/scrape", async (req, res) => {
   const { url } = req.body;
 
@@ -23,10 +23,17 @@ app.post("/scrape", async (req, res) => {
   }
 
   try {
-    const result = await scrapePage(url);
+    const result = await Promise.race([
+      scrapePage(url),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout exceeded")), 25000)
+      )
+    ]);
+
     res.json(result);
   } catch (error) {
     console.error("Scraping error:", error.message);
+
     res.status(500).json({
       error: "Scraping failed",
       details: error.message
