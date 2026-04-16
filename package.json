@@ -1,7 +1,6 @@
 {
   "name": "playwright-scraper",
   "version": "1.0.0",
-  "description": "Playwright scraping microservice",
   "main": "server.js",
   "type": "module",
   "scripts": {
@@ -9,8 +8,7 @@
   },
   "dependencies": {
     "express": "^4.19.2",
-    "playwright": "^1.42.0",
-    "dotenv": "^16.4.5",
-    "p-timeout": "^6.1.2"
+    "playwright": "^1.59.1",
+    "dotenv": "^16.4.5"
   }
 }
