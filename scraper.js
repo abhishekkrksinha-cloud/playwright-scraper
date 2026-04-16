@@ -29,10 +29,37 @@ export async function scrapePage(url) {
     // ⚡ Faster load strategy
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
 
+// wait for page render
+await page.waitForTimeout(2000);
+
+// simulate scroll (important for sticky + lazy UI)
+await page.mouse.move(300, 500);
+await page.mouse.wheel(0, 800);
+await page.waitForTimeout(1000);
+
+// scroll again
+await page.mouse.wheel(0, 800);
+await page.waitForTimeout(1000);
+
+// try interacting with delivery/pincode section
+try {
+  const deliveryTrigger = await page.locator('text=/delivery|pincode/i').first();
+  if (deliveryTrigger) {
+    await deliveryTrigger.click({ timeout: 2000 });
+    await page.waitForTimeout(1000);
+  }
+} catch (e) {
+  // ignore safely
+}
+
     await page.waitForSelector("body", { timeout: 10000 });
 
     // Trigger lazy content
     await autoScroll(page);
+
+// extra scroll for dynamic UI
+await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+await page.waitForTimeout(1500);
     await page.waitForTimeout(2000);
 
     // Extract data
