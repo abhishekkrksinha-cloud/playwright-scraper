@@ -18,9 +18,12 @@ export async function scrapePage(url) {
 
   try {
     await pTimeout(
-      page.goto(url, { waitUntil: "networkidle" }),
-      30000
-    );
+  page.goto(url, { waitUntil: "domcontentloaded" }),
+  30000
+);
+
+await page.waitForSelector("body", { timeout: 10000 });
+await page.mouse.move(100, 200);
 
     // Auto scroll for lazy loading
     await autoScroll(page);
