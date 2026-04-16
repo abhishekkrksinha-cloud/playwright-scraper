@@ -32,23 +32,31 @@ export async function extractSignals(page) {
       return rect.width > 0 && rect.height > 0;
     };
 
+    // ✅ IMPROVED STICKY DETECTION
     const isSticky = (el) => {
-  const style = window.getComputedStyle(el);
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
 
-  const rect = el.getBoundingClientRect();
-
-  return (
-    style.position === "fixed" ||
-    style.position === "sticky" ||
-    rect.bottom <= window.innerHeight && rect.top >= 0
-  );
-};
+      return (
+        style.position === "fixed" ||
+        style.position === "sticky" ||
+        (rect.bottom <= window.innerHeight && rect.top >= 0)
+      );
+    };
 
     const getJsonLD = () => {
-      const scripts = Array.from(document.querySelectorAll('script[type="application/ld+json"]'));
-      return scripts.map(s => {
-        try { return JSON.parse(s.innerText); } catch { return null; }
-      }).filter(Boolean);
+      const scripts = Array.from(
+        document.querySelectorAll('script[type="application/ld+json"]')
+      );
+      return scripts
+        .map((s) => {
+          try {
+            return JSON.parse(s.innerText);
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean);
     };
 
     // Shopify detection
@@ -61,7 +69,9 @@ export async function extractSignals(page) {
       text(document.querySelector("h1")) ||
       document.title;
 
-    // PRICE
+    // ---------------------------
+    // PRICE EXTRACTION
+    // ---------------------------
     let price = null;
 
     const priceEl =
@@ -86,28 +96,35 @@ export async function extractSignals(page) {
       if (match) price = match[0];
     }
 
-    // CTA
+    // ---------------------------
+    // CTA DETECTION
+    // ---------------------------
     const ctas = getAll("button, a")
       .map((el) => ({
         text: text(el),
         isVisible: visible(el),
         isSticky: isSticky(el)
       }))
-      .filter(btn =>
-        btn.text &&
-        /add to cart|buy now|checkout/i.test(btn.text)
+      .filter(
+        (btn) =>
+          btn.text &&
+          /add to cart|buy now|checkout|add to bag/i.test(btn.text)
       );
 
-    const primaryCTA = ctas.find(btn => btn.isVisible);
-    const stickyCTA = ctas.find(btn => btn.isSticky);
+    const primaryCTA = ctas.find((btn) => btn.isVisible);
+    const stickyCTA = ctas.find((btn) => btn.isSticky);
 
-    // Reviews
+    // ---------------------------
+    // REVIEWS
+    // ---------------------------
     const bodyText = document.body.innerText;
 
     const ratingMatch = bodyText.match(/(\d\.\d)/);
     const reviewMatch = bodyText.match(/(\d+)\s?(reviews|ratings)/i);
 
-    // Offers
+    // ---------------------------
+    // OFFERS
+    // ---------------------------
     const offerPatterns = [
       /buy\s?\d+.*?get\s?\d+.*?(off|free)/gi,
       /\d+%\s?(off|discount)/gi,
@@ -115,11 +132,39 @@ export async function extractSignals(page) {
     ];
 
     let offers = [];
-    offerPatterns.forEach(p => {
+    offerPatterns.forEach((p) => {
       const m = bodyText.match(p);
       if (m) offers.push(...m);
     });
 
+    // ---------------------------
+    // ✅ DELIVERY / PINCODE DETECTION (NEW)
+    // ---------------------------
+    let pincodeChecker = false;
+    let deliveryInfoPresent = false;
+
+    const inputs = Array.from(document.querySelectorAll("input"));
+
+    inputs.forEach((input) => {
+      const placeholder = input.placeholder?.toLowerCase() || "";
+
+      if (
+        placeholder.includes("pincode") ||
+        placeholder.includes("delivery")
+      ) {
+        pincodeChecker = true;
+        deliveryInfoPresent = true;
+      }
+    });
+
+    // fallback: text-based detection
+    if (bodyText.toLowerCase().includes("delivery")) {
+      deliveryInfoPresent = true;
+    }
+
+    // ---------------------------
+    // FINAL RETURN
+    // ---------------------------
     return {
       platform: isShopify ? "shopify" : "unknown",
       title,
@@ -130,6 +175,11 @@ export async function extractSignals(page) {
       rating: ratingMatch?.[1] || null,
       reviewCount: reviewMatch?.[1] || null,
       offers,
+
+      // ✅ NEW FIELDS
+      pincodeChecker,
+      deliveryInfoPresent,
+
       confidenceFlags: {
         hasPrice: !!price,
         hasCTA: !!primaryCTA,
