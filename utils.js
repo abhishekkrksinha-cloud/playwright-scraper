@@ -1,55 +1,164 @@
-export async function autoScroll(page) {
-  await page.evaluate(async () => {
-    await new Promise((resolve) => {
-      let totalHeight = 0;
-      const distance = 300;
-
-      const timer = setInterval(() => {
-        window.scrollBy(0, distance);
-        totalHeight += distance;
-
-        if (totalHeight >= document.body.scrollHeight) {
-          clearInterval(timer);
-          resolve();
-        }
-      }, 200);
-    });
-  });
-}
-
-// Basic extraction (you will evolve this)
 export async function extractSignals(page) {
   return await page.evaluate(() => {
-    const getText = (selector) =>
-      document.querySelector(selector)?.innerText || null;
+    // ---------- HELPERS ----------
+    const text = (el) => el?.innerText?.trim() || null;
 
-    const getAllText = (selector) =>
-      Array.from(document.querySelectorAll(selector)).map(
-        (el) => el.innerText
+    const getAll = (selector) =>
+      Array.from(document.querySelectorAll(selector));
+
+    const visible = (el) => {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+
+    const isSticky = (el) => {
+      const style = window.getComputedStyle(el);
+      return (
+        style.position === "fixed" ||
+        style.position === "sticky"
+      );
+    };
+
+    const getJsonLD = () => {
+      const scripts = getAll('script[type="application/ld+json"]');
+      return scripts.map(s => {
+        try { return JSON.parse(s.innerText); } catch { return null; }
+      }).filter(Boolean);
+    };
+
+    // ---------- SHOPIFY DETECTION ----------
+    const isShopify =
+      document.querySelector('meta[name="shopify-checkout-api-token"]') ||
+      window.Shopify ||
+      document.querySelector('script[src*="cdn.shopify.com"]');
+
+    // ---------- TITLE ----------
+    const title =
+      text(document.querySelector("h1")) ||
+      document.title;
+
+    // ---------- PRICE (MULTI-STRATEGY) ----------
+    let price = null;
+
+    // Shopify specific
+    const shopifyPrice =
+      document.querySelector('[data-product-price]') ||
+      document.querySelector('.price-item--regular') ||
+      document.querySelector('.price') ||
+      document.querySelector('[class*="price"]');
+
+    if (shopifyPrice) {
+      price = text(shopifyPrice);
+    }
+
+    // JSON-LD fallback
+    if (!price) {
+      const jsonLD = getJsonLD();
+      for (let data of jsonLD) {
+        if (data?.offers?.price) {
+          price = "₹" + data.offers.price;
+          break;
+        }
+      }
+    }
+
+    // Regex fallback
+    if (!price) {
+      const match = document.body.innerText.match(/₹\s?\d+[,\d]*/);
+      if (match) price = match[0];
+    }
+
+    // ---------- CTA DETECTION ----------
+    const ctas = getAll("button, a")
+      .map((el) => ({
+        text: text(el),
+        isVisible: visible(el),
+        isSticky: isSticky(el),
+      }))
+      .filter(
+        (btn) =>
+          btn.text &&
+          /add to cart|buy now|shop now|checkout/i.test(btn.text)
       );
 
+    const primaryCTA = ctas.find(
+      (btn) =>
+        /buy now|add to cart/i.test(btn.text) &&
+        btn.isVisible
+    );
+
+    const stickyCTA = ctas.find(
+      (btn) => btn.isSticky && btn.isVisible
+    );
+
+    // ---------- REVIEWS ----------
+    let rating = null;
+    let reviewCount = null;
+
+    const bodyText = document.body.innerText;
+
+    const ratingMatch = bodyText.match(/(\d\.\d)\s?(out of 5|stars?)/i);
+    if (ratingMatch) rating = ratingMatch[1];
+
+    const reviewMatch = bodyText.match(/(\d+)\s?(reviews|ratings)/i);
+    if (reviewMatch) reviewCount = reviewMatch[1];
+
+    // ---------- OFFERS ENGINE ----------
+    const offerPatterns = [
+      /buy\s?\d+.*?get\s?\d+.*?(off|free)/gi,
+      /\d+%\s?(off|discount)/gi,
+      /free\s?(shipping|delivery)/gi,
+      /sale\s?ends?.*/gi
+    ];
+
+    let offers = [];
+
+    offerPatterns.forEach((pattern) => {
+      const matches = bodyText.match(pattern);
+      if (matches) offers.push(...matches);
+    });
+
+    // ---------- IMAGES ----------
+    const images = getAll("img")
+      .map((img) => img.src)
+      .filter(Boolean);
+
+    // ---------- FINAL ----------
     return {
-      title: document.title,
+      platform: isShopify ? "shopify" : "unknown",
 
-      h1: getText("h1"),
+      title,
+      price,
 
-      price:
-        document.body.innerText.match(/₹\s?\d+[,\d]*/)?.[0] || null,
+      primaryCTA,
+      stickyCTA,
+      allCTAs: ctas,
 
-      ctaButtons: getAllText("button"),
+      rating,
+      reviewCount,
 
-      links: Array.from(document.querySelectorAll("a")).map((a) =>
-        a.href
-      ),
+      offers,
 
-      images: Array.from(document.querySelectorAll("img")).map(
-        (img) => img.src
-      ),
-
-      // Detect offer keywords
-      offers: document.body.innerText.match(
-        /(buy\s?\d+.*?off|discount|sale|free shipping)/gi
-      )
+      imageCount: images.length
     };
   });
 }
+return {
+  platform: isShopify ? "shopify" : "unknown",
+  title,
+  price,
+  primaryCTA,
+  stickyCTA,
+  allCTAs: ctas,
+  rating,
+  reviewCount,
+  offers,
+  imageCount: images.length,
+
+  confidenceFlags: {
+    hasPrice: !!price,
+    hasCTA: !!primaryCTA,
+    hasStickyCTA: !!stickyCTA,
+    hasReviews: !!reviewCount
+  }
+};
