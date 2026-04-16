@@ -1,5 +1,4 @@
 import { chromium } from "playwright";
-import pTimeout from "p-timeout";
 import { autoScroll, extractSignals } from "./utils.js";
 
 export async function scrapePage(url) {
@@ -17,31 +16,34 @@ export async function scrapePage(url) {
   const page = await context.newPage();
 
   try {
-    await pTimeout(
-  page.goto(url, { waitUntil: "domcontentloaded" }),
-  30000
-);
+    // 🚀 Block heavy resources (IMPORTANT)
+    await page.route("**/*", (route) => {
+      const type = route.request().resourceType();
+      if (["image", "font", "media"].includes(type)) {
+        route.abort();
+      } else {
+        route.continue();
+      }
+    });
 
-await page.waitForSelector("body", { timeout: 10000 });
-await page.mouse.move(100, 200);
+    // ⚡ Faster load strategy
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
 
-    // Auto scroll for lazy loading
+    await page.waitForSelector("body", { timeout: 10000 });
+
+    // Trigger lazy content
     await autoScroll(page);
-
-    // Wait extra for dynamic UI
     await page.waitForTimeout(2000);
 
-    // Extract full DOM
+    // Extract data
     const html = await page.content();
 
-    // Screenshot (optional for CRO)
     const screenshot = await page.screenshot({
       fullPage: true,
       type: "jpeg",
-      quality: 60
+      quality: 40
     });
 
-    // Extract structured signals
     const signals = await extractSignals(page);
 
     return {
@@ -51,6 +53,7 @@ await page.mouse.move(100, 200);
       screenshot: screenshot.toString("base64"),
       timestamp: new Date().toISOString()
     };
+
   } catch (error) {
     throw new Error(`Failed to scrape: ${error.message}`);
   } finally {
